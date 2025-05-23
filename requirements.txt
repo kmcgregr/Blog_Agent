@@ -1,0 +1,6 @@
+langchain
+langchain-community
+ollama
+chromadb             # Keeping it for potential future uses or if you change your mind
+pypdf
+Pillow               # For basic image handling if we ever display/save directly (optional for prompts)
