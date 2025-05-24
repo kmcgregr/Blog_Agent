@@ -1,7 +1,7 @@
 # main.py
 
 import os
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.llms import Ollama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -15,52 +15,56 @@ def create_output_dirs():
     print(f"Ensured input directory: {INPUT_PDF_DIR}")
     print(f"Ensured output directory: {OUTPUT_DIR}")
 
-def process_dream_pdf(pdf_path, llm):
+def process_dream_file(file_path, llm): # Renamed function from process_dream_pdf
     """
-    Processes a single dream PDF: extracts text, corrects it, suggests title,
+    Processes a single dream file (PDF or TXT): extracts text, corrects it, suggests title,
     generates story, and image prompt.
     """
-    print(f"\n--- Processing {pdf_path} ---")
+    print(f"\n--- Processing {file_path} ---")
     
-    # 1. Load PDF and Extract Text
+    # 1. Load File and Extract Text
+    dream_text = ""
     try:
-        loader = PyPDFLoader(pdf_path)
-        documents = loader.load()
-        dream_text = "\n".join([doc.page_content for doc in documents])
-        if not dream_text.strip():
-            print(f"Warning: No text extracted from {pdf_path}. Skipping.")
+        if file_path.lower().endswith(".pdf"):
+            loader = PyPDFLoader(file_path)
+            documents = loader.load()
+            dream_text = "\n".join([doc.page_content for doc in documents])
+            print(f"Text extracted from PDF: {file_path}")
+        elif file_path.lower().endswith(".txt"):
+            loader = TextLoader(file_path, encoding="utf-8")
+            documents = loader.load()
+            dream_text = "\n".join([doc.page_content for doc in documents])
+            print(f"Text extracted from TXT: {file_path}")
+        else:
+            print(f"Skipping unsupported file type: {file_path}")
             return None
-        print("Text extracted successfully.")
+
+        if not dream_text.strip():
+            print(f"Warning: No text extracted or text is empty from {file_path}. Skipping.")
+            return None
     except Exception as e:
-        print(f"Error loading PDF {pdf_path}: {e}")
+        print(f"Error loading file {file_path}: {e}")
         return None
 
-    # Define common prompt templates
-    # We use ChatPromptTemplate for better structure with Ollama models
-    # It's good practice to clearly separate user and system instructions.
-
-    # Prompt for grammar and formatting correction
+    # Define common prompt templates (No changes needed here as they operate on extracted text)
     correction_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a helpful assistant that corrects grammar, spelling, and improves the formatting of raw text, making it suitable for a blog post. Do not add or remove content, only refine what is provided."),
         ("user", "Please correct the following dream entry for grammar, spelling, and formatting:\n\n{dream_text}")
     ])
     correction_chain = correction_prompt | llm | StrOutputParser()
 
-    # Prompt for SEO-friendly title
     title_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a creative content generator. Based on the following dream entry, suggest a concise and SEO-friendly title suitable for a blog post. The title should be engaging and relevant to the dream's content."),
         ("user", "Dream entry:\n\n{corrected_dream_text}\n\nSuggested SEO-friendly Title:")
     ])
     title_chain = title_prompt | llm | StrOutputParser()
 
-    # Prompt for short story generation
     story_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a gifted storyteller. Expand the following dream entry into a creative, engaging, and slightly embellished short story. Keep it under 500 words. Use descriptive language and vivid imagery."),
         ("user", "Dream entry:\n\n{corrected_dream_text}\n\nShort Story:")
     ])
     story_chain = story_prompt | llm | StrOutputParser()
 
-    # Prompt for image prompt generation
     image_prompt_gen_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are an AI art prompt generator. Based on the following dream entry and its short story, create a detailed and imaginative text-to-image prompt suitable for an AI art model (e.g., Stable Diffusion, Midjourney). Focus on key elements, mood, and visual style. The prompt should be concise yet descriptive."),
         ("user", "Dream entry:\n\n{corrected_dream_text}\n\nShort story:\n\n{short_story}\n\nImage Generation Prompt:")
@@ -82,14 +86,14 @@ def process_dream_pdf(pdf_path, llm):
         })
 
         return {
-            "original_pdf": os.path.basename(pdf_path),
+            "original_file": os.path.basename(file_path),
             "corrected_dream_text": corrected_dream_text.strip(),
             "seo_title": seo_title.strip().replace('\n', ' ').replace('Title:', '').strip(), # Clean up title output
             "short_story": short_story.strip(),
             "image_prompt": image_prompt.strip()
         }
     except Exception as e:
-        print(f"Error during AI processing for {pdf_path}: {e}")
+        print(f"Error during AI processing for {file_path}: {e}")
         print("Please ensure your Ollama server is running and the model is downloaded.")
         return None
 
@@ -122,32 +126,26 @@ def main():
 
     # Initialize Ollama LLM
     print(f"Initializing Ollama LLM with model: {LOCAL_LLM_MODEL}")
-    try:
-        llm = Ollama(model=LOCAL_LLM_MODEL)
-        print(f"Ollama LLM initialized successfully with model: {LOCAL_LLM_MODEL}")
-    except Exception as e:
-        print(f"Error initializing Ollama LLM with model '{LOCAL_LLM_MODEL}': {e}")
-        print("Please ensure the model name is correct and the Ollama server is running.")
-        return
+    llm = Ollama(model=LOCAL_LLM_MODEL)
 
-    pdf_files_found = False
-    for filename in os.listdir(INPUT_PDF_DIR):
-        if filename.lower().endswith(".pdf"):
-            pdf_files_found = True
-            pdf_path = os.path.join(INPUT_PDF_DIR, filename)
+    files_found = False
+    for filename in os.listdir(INPUT_PDF_DIR): # Still using INPUT_PDF_DIR for convenience, but it now holds PDFs and TXTs
+        if filename.lower().endswith((".pdf", ".txt")): # Check for both extensions
+            files_found = True
+            file_path = os.path.join(INPUT_PDF_DIR, filename)
             base_filename = os.path.splitext(filename)[0] # e.g., "dream_001"
 
-            processed_data = process_dream_pdf(pdf_path, llm)
+            processed_data = process_dream_file(file_path, llm) # Call the renamed function
             if processed_data:
                 save_processed_dream(processed_data, base_filename)
             print("-" * 40) # Separator for readability
 
-    if not pdf_files_found:
-        print(f"\nNo PDF files found in '{INPUT_PDF_DIR}'.")
-        print("Please place your scanned dream PDF files into this directory.")
-        print("Example: Create a file named 'my_first_dream.pdf' inside the 'input_dreams/' folder.")
+    if not files_found:
+        print(f"\nNo PDF or TXT files found in '{INPUT_PDF_DIR}'.")
+        print("Please place your scanned dream PDF files or plain text dream files into this directory.")
+        print("Example: Create a file named 'my_first_dream.pdf' or 'my_second_dream.txt' inside the 'input_dreams/' folder.")
     else:
-        print("\nAll accessible PDF files processed. Check the 'processed_dreams/' directory for outputs.")
+        print("\nAll accessible PDF and TXT files processed. Check the 'processed_dreams/' directory for outputs.")
         print("Remember to keep `ollama serve` running in a separate terminal!")
 
 
