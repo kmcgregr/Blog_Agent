@@ -2,9 +2,10 @@
 
 import os
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_community.llms import Ollama
+#from langchain_community.llms import Ollama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_ollama import OllamaLLM
 
 from config import LOCAL_LLM_MODEL, INPUT_PDF_DIR, OUTPUT_DIR
 
@@ -60,7 +61,22 @@ def process_dream_file(file_path, llm): # Renamed function from process_dream_pd
     title_chain = title_prompt | llm | StrOutputParser()
 
     story_prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a gifted storyteller. Expand the following dream entry into a creative, engaging, and slightly embellished short story. Keep it under 500 words. Use descriptive language and vivid imagery."),
+        ("system", """You are a gifted short story writer. Expand the following dream entry into a creative,
+          engaging, and slightly embellished short story. Provide a title for the short story.
+          First develop the outline to include main sections or chapters, along with subtopics or key points under each section.
+          Ensure the outline is coherent and serves as a roadmap for the content.
+          Use headings, subheadings, and bullet points to create a clear and coherent outline.
+          Limit the outline to 7 chapters, with each chapter containing no more than 5 subheadings.
+          Provide a brief description of each chapter to give content.
+          Ensure the outline is suitable for a short story format.
+          Make sure the outline is engaging and captures the essence of the story.Use a professional format for the outline.
+          Include a title for the outline.Ensure the outline is concise and to the point.
+          Review the outline for clarity and coherence.
+          Make any necessary adjustments to improve the outline.
+          Finalize the outline for submission.
+          Expand the given outline for the short story with a maximum of 15000 words.
+          Develop each section or chapter by adding comprehensive content to the subtopics or key points outlined.
+          Use short-tail keywords Use descriptive language and vivid imagery."""),
         ("user", "Dream entry:\n\n{corrected_dream_text}\n\nShort Story:")
     ])
     story_chain = story_prompt | llm | StrOutputParser()
@@ -126,7 +142,7 @@ def main():
 
     # Initialize Ollama LLM
     print(f"Initializing Ollama LLM with model: {LOCAL_LLM_MODEL}")
-    llm = Ollama(model=LOCAL_LLM_MODEL)
+    llm = OllamaLLM(model=LOCAL_LLM_MODEL)
 
     files_found = False
     for filename in os.listdir(INPUT_PDF_DIR): # Still using INPUT_PDF_DIR for convenience, but it now holds PDFs and TXTs
