@@ -12,7 +12,7 @@ from langchain_core.output_parsers import StrOutputParser
 from config import (
     LOCAL_LLM_MODEL, INPUT_PDF_DIR, OUTPUT_DIR,
     CORRECTION_PROMPT_FILE, TITLE_PROMPT_FILE, STORY_PROMPT_FILE,
-    COPY_EDIT_PROMPT_FILE, IMAGE_PROMPT_FILE
+    COPY_EDIT_PROMPT_FILE, STORY_REVIEW_PROMPT_FILE, IMAGE_PROMPT_FILE
 )
 
 def create_output_dirs():
@@ -73,9 +73,10 @@ def process_dream_file(file_path, llm):
     title_prompt = load_prompt_from_xml(TITLE_PROMPT_FILE)
     story_prompt = load_prompt_from_xml(STORY_PROMPT_FILE)
     copy_edit_prompt = load_prompt_from_xml(COPY_EDIT_PROMPT_FILE)
+    story_review_prompt = load_prompt_from_xml(STORY_REVIEW_PROMPT_FILE)
     # image_prompt_gen_prompt = load_prompt_from_xml(IMAGE_PROMPT_FILE)
 
-    if not all([correction_prompt, title_prompt, story_prompt, copy_edit_prompt]):
+    if not all([correction_prompt, title_prompt, story_prompt, copy_edit_prompt, story_review_prompt]):
         print("One or more prompts could not be loaded. Aborting.")
         return None
 
@@ -84,6 +85,7 @@ def process_dream_file(file_path, llm):
     title_chain = title_prompt | llm | StrOutputParser()
     story_chain = story_prompt | llm | StrOutputParser()
     copy_edit_chain = copy_edit_prompt | llm | StrOutputParser()
+    story_review_chain = story_review_prompt | llm | StrOutputParser()
     # image_prompt_gen_chain = image_prompt_gen_prompt | llm | StrOutputParser()
 
     # Run the chains sequentially
@@ -96,6 +98,8 @@ def process_dream_file(file_path, llm):
         short_story_draft = story_chain.invoke({"corrected_dream_text": corrected_dream_text})
         print("Copy-editing the short story...")
         final_short_story = copy_edit_chain.invoke({"short_story": short_story_draft})
+        print("Reviewing the short story...")
+        reviewed_story = story_review_chain.invoke({"final_short_story": final_short_story})
         # print("Generating image prompt...")
         # image_prompt = image_prompt_gen_chain.invoke({
         #     "corrected_dream_text": corrected_dream_text,
@@ -108,6 +112,7 @@ def process_dream_file(file_path, llm):
             "seo_title": seo_title.strip().replace('\n', ' ').replace('Title:', '').strip(),
             "short_story_draft": short_story_draft.strip(),
             "final_short_story": final_short_story.strip(),
+            "reviewed_story": reviewed_story.strip(),
             # "image_prompt": image_prompt.strip()
         }
     except Exception as e:
@@ -139,6 +144,12 @@ def save_processed_dream(processed_data, base_filename):
         f.write(f"## Final (Copy-Edited) Story for: {processed_data['seo_title']}\n\n")
         f.write(processed_data['final_short_story'])
     print(f"Saved final short story to {output_base_name}_final_short_story.md")
+
+    # Save reviewed story
+    with open(f"{output_base_name}_reviewed_story.md", "w", encoding="utf-8") as f:
+        f.write(f"## Reviewed Story for: {processed_data['seo_title']}\n\n")
+        f.write(processed_data['reviewed_story'])
+    print(f"Saved reviewed story to {output_base_name}_reviewed_story.md")
 
     # Save image prompt
     # with open(f"{output_base_name}_image_prompt.txt", "w", encoding="utf-8") as f:
