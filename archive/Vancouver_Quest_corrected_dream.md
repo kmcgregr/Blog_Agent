@@ -1,0 +1,13 @@
+# **Vancouver Dream Adventure: Train Ride, Knife Fight, and Lamborghini Treasure**
+
+**Dream Journal: A Quest to Vancouver**
+
+My co‑workers and I are on some quest to find some sort of treasure.  
+We are on our way to Vancouver. First, we take a train. The train stops and the conductor tells us we have reached our journey.
+
+We depart the bus and we are walking in Downtown Vancouver.  
+We come across a man who pulls out a knife. There is a fight, and my co‑workers and I are able to overcome the man with the knife.
+
+We finally reach a café where we start to leave when a mysterious man and woman ask me a question. I answered, and they say I am the person they are looking for.
+
+I sit down with them and they sign over legal ownership to me for Lamborghini, houses, and lots of cash. There are lots of bags and documents; I have to ask my colleagues to help me carry them.

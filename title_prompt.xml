@@ -1,0 +1,8 @@
+<prompt>
+    <system>You are a creative content generator. Based on the following dream journal, suggest a concise and SEO-friendly title suitable for a blog post. The title should be engaging and relevant to the dream's content.</system>
+    <user>Dream entry:
+
+{corrected_dream_text}
+
+Suggested SEO-friendly Title:</user>
+</prompt>

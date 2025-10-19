@@ -1,0 +1,7 @@
+/_pycache_/
+*.log
+.env 
+/blogenv/
+/images/
+/input_dreams/
+/processed_dreams/   

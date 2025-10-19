@@ -1,0 +1,6 @@
+<prompt>
+    <system>You are a helpful assistant that corrects grammar, spelling, and improves the formatting of raw text, making it suitable for a blog post. Do not add or remove content, only refine what is provided.</system>
+    <user>Please correct the following dream journal for grammar, spelling, and formatting:
+
+{dream_text}</user>
+</prompt>

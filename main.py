@@ -1,13 +1,19 @@
+
 # main.py
 
 import os
+import argparse
+import xml.etree.ElementTree as ET
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
-#from langchain_community.llms import Ollama
+from langchain_community.llms import Ollama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_ollama import OllamaLLM
 
-from config import LOCAL_LLM_MODEL, INPUT_PDF_DIR, OUTPUT_DIR
+from config import (
+    LOCAL_LLM_MODEL, INPUT_PDF_DIR, OUTPUT_DIR,
+    CORRECTION_PROMPT_FILE, TITLE_PROMPT_FILE, STORY_PROMPT_FILE,
+    COPY_EDIT_PROMPT_FILE, IMAGE_PROMPT_FILE
+)
 
 def create_output_dirs():
     """Ensures input and output directories exist."""
@@ -16,13 +22,28 @@ def create_output_dirs():
     print(f"Ensured input directory: {INPUT_PDF_DIR}")
     print(f"Ensured output directory: {OUTPUT_DIR}")
 
-def process_dream_file(file_path, llm): # Renamed function from process_dream_pdf
+def load_prompt_from_xml(file_path):
+    """Loads a prompt from an XML file."""
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+        system_message = root.find('system').text.strip()
+        user_message = root.find('user').text.strip()
+        return ChatPromptTemplate.from_messages([
+            ("system", system_message),
+            ("user", user_message)
+        ])
+    except Exception as e:
+        print(f"Error loading prompt from {file_path}: {e}")
+        return None
+
+def process_dream_file(file_path, llm):
     """
     Processes a single dream file (PDF or TXT): extracts text, corrects it, suggests title,
-    generates story, and image prompt.
+    generates story, copy-edits the story, and creates an image prompt.
     """
     print(f"\n--- Processing {file_path} ---")
-    
+
     # 1. Load File and Extract Text
     dream_text = ""
     try:
@@ -47,45 +68,23 @@ def process_dream_file(file_path, llm): # Renamed function from process_dream_pd
         print(f"Error loading file {file_path}: {e}")
         return None
 
-    # Define common prompt templates (No changes needed here as they operate on extracted text)
-    correction_prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a helpful assistant that corrects grammar, spelling, and improves the formatting of raw text, making it suitable for a blog post. Do not add or remove content, only refine what is provided."),
-        ("user", "Please correct the following dream entry for grammar, spelling, and formatting:\n\n{dream_text}")
-    ])
+    # Load prompts from external files
+    correction_prompt = load_prompt_from_xml(CORRECTION_PROMPT_FILE)
+    title_prompt = load_prompt_from_xml(TITLE_PROMPT_FILE)
+    story_prompt = load_prompt_from_xml(STORY_PROMPT_FILE)
+    copy_edit_prompt = load_prompt_from_xml(COPY_EDIT_PROMPT_FILE)
+    # image_prompt_gen_prompt = load_prompt_from_xml(IMAGE_PROMPT_FILE)
+
+    if not all([correction_prompt, title_prompt, story_prompt, copy_edit_prompt]):
+        print("One or more prompts could not be loaded. Aborting.")
+        return None
+
+    # Define chains
     correction_chain = correction_prompt | llm | StrOutputParser()
-
-    title_prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a creative content generator. Based on the following dream entry, suggest a concise and SEO-friendly title suitable for a blog post. The title should be engaging and relevant to the dream's content."),
-        ("user", "Dream entry:\n\n{corrected_dream_text}\n\nSuggested SEO-friendly Title:")
-    ])
     title_chain = title_prompt | llm | StrOutputParser()
-
-    story_prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a gifted short story writer. Expand the following dream entry into a creative,
-          engaging, and slightly embellished short story. Provide a title for the short story.
-          First develop the outline to include main sections or chapters, along with subtopics or key points under each section.
-          Ensure the outline is coherent and serves as a roadmap for the content.
-          Use headings, subheadings, and bullet points to create a clear and coherent outline.
-          Limit the outline to 7 chapters, with each chapter containing no more than 5 subheadings.
-          Provide a brief description of each chapter to give content.
-          Ensure the outline is suitable for a short story format.
-          Make sure the outline is engaging and captures the essence of the story.Use a professional format for the outline.
-          Include a title for the outline.Ensure the outline is concise and to the point.
-          Review the outline for clarity and coherence.
-          Make any necessary adjustments to improve the outline.
-          Finalize the outline for submission.
-          Expand the given outline for the short story with a maximum of 15000 words.
-          Develop each section or chapter by adding comprehensive content to the subtopics or key points outlined.
-          Use short-tail keywords Use descriptive language and vivid imagery."""),
-        ("user", "Dream entry:\n\n{corrected_dream_text}\n\nShort Story:")
-    ])
     story_chain = story_prompt | llm | StrOutputParser()
-
-    image_prompt_gen_prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are an AI art prompt generator. Based on the following dream entry and its short story, create a detailed and imaginative text-to-image prompt suitable for an AI art model (e.g., Stable Diffusion, Midjourney). Focus on key elements, mood, and visual style. The prompt should be concise yet descriptive."),
-        ("user", "Dream entry:\n\n{corrected_dream_text}\n\nShort story:\n\n{short_story}\n\nImage Generation Prompt:")
-    ])
-    image_prompt_gen_chain = image_prompt_gen_prompt | llm | StrOutputParser()
+    copy_edit_chain = copy_edit_prompt | llm | StrOutputParser()
+    # image_prompt_gen_chain = image_prompt_gen_prompt | llm | StrOutputParser()
 
     # Run the chains sequentially
     try:
@@ -94,19 +93,22 @@ def process_dream_file(file_path, llm): # Renamed function from process_dream_pd
         print("Generating SEO-friendly title...")
         seo_title = title_chain.invoke({"corrected_dream_text": corrected_dream_text})
         print("Generating short story...")
-        short_story = story_chain.invoke({"corrected_dream_text": corrected_dream_text})
-        print("Generating image prompt...")
-        image_prompt = image_prompt_gen_chain.invoke({
-            "corrected_dream_text": corrected_dream_text,
-            "short_story": short_story
-        })
+        short_story_draft = story_chain.invoke({"corrected_dream_text": corrected_dream_text})
+        print("Copy-editing the short story...")
+        final_short_story = copy_edit_chain.invoke({"short_story": short_story_draft})
+        # print("Generating image prompt...")
+        # image_prompt = image_prompt_gen_chain.invoke({
+        #     "corrected_dream_text": corrected_dream_text,
+        #     "short_story": final_short_story
+        # })
 
         return {
             "original_file": os.path.basename(file_path),
             "corrected_dream_text": corrected_dream_text.strip(),
-            "seo_title": seo_title.strip().replace('\n', ' ').replace('Title:', '').strip(), # Clean up title output
-            "short_story": short_story.strip(),
-            "image_prompt": image_prompt.strip()
+            "seo_title": seo_title.strip().replace('\n', ' ').replace('Title:', '').strip(),
+            "short_story_draft": short_story_draft.strip(),
+            "final_short_story": final_short_story.strip(),
+            # "image_prompt": image_prompt.strip()
         }
     except Exception as e:
         print(f"Error during AI processing for {file_path}: {e}")
@@ -126,35 +128,46 @@ def save_processed_dream(processed_data, base_filename):
         f.write(processed_data['corrected_dream_text'])
     print(f"Saved corrected dream and title to {output_base_name}_corrected_dream.md")
 
-    # Save short story
-    with open(f"{output_base_name}_short_story.md", "w", encoding="utf-8") as f:
-        f.write(f"## Short Story based on: {processed_data['seo_title']}\n\n")
-        f.write(processed_data['short_story'])
-    print(f"Saved short story to {output_base_name}_short_story.md")
+    # Save initial story draft
+    with open(f"{output_base_name}_story_draft.md", "w", encoding="utf-8") as f:
+        f.write(f"## Initial Story Draft for: {processed_data['seo_title']}\n\n")
+        f.write(processed_data['short_story_draft'])
+    print(f"Saved initial story draft to {output_base_name}_story_draft.md")
+
+    # Save final (copy-edited) short story
+    with open(f"{output_base_name}_final_short_story.md", "w", encoding="utf-8") as f:
+        f.write(f"## Final (Copy-Edited) Story for: {processed_data['seo_title']}\n\n")
+        f.write(processed_data['final_short_story'])
+    print(f"Saved final short story to {output_base_name}_final_short_story.md")
 
     # Save image prompt
-    with open(f"{output_base_name}_image_prompt.txt", "w", encoding="utf-8") as f:
-        f.write(processed_data['image_prompt'])
-    print(f"Saved image prompt to {output_base_name}_image_prompt.txt")
+    # with open(f"{output_base_name}_image_prompt.txt", "w", encoding="utf-8") as f:
+    #     f.write(processed_data['image_prompt'])
+    # print(f"Saved image prompt to {output_base_name}_image_prompt.txt")
 
 def main():
+    parser = argparse.ArgumentParser(description="Process dream files into blog content.")
+    parser.add_argument("--model", default=LOCAL_LLM_MODEL,
+                        help=f"The Ollama model to use (default: {LOCAL_LLM_MODEL})")
+    args = parser.parse_args()
+
     create_output_dirs()
 
     # Initialize Ollama LLM
-    print(f"Initializing Ollama LLM with model: {LOCAL_LLM_MODEL}")
-    llm = OllamaLLM(model=LOCAL_LLM_MODEL)
+    print(f"Initializing Ollama LLM with model: {args.model}")
+    llm = Ollama(model=args.model)
 
     files_found = False
-    for filename in os.listdir(INPUT_PDF_DIR): # Still using INPUT_PDF_DIR for convenience, but it now holds PDFs and TXTs
-        if filename.lower().endswith((".pdf", ".txt")): # Check for both extensions
+    for filename in os.listdir(INPUT_PDF_DIR):
+        if filename.lower().endswith((".pdf", ".txt")):
             files_found = True
             file_path = os.path.join(INPUT_PDF_DIR, filename)
-            base_filename = os.path.splitext(filename)[0] # e.g., "dream_001"
+            base_filename = os.path.splitext(filename)[0]
 
-            processed_data = process_dream_file(file_path, llm) # Call the renamed function
+            processed_data = process_dream_file(file_path, llm)
             if processed_data:
                 save_processed_dream(processed_data, base_filename)
-            print("-" * 40) # Separator for readability
+            print("-" * 40)
 
     if not files_found:
         print(f"\nNo PDF or TXT files found in '{INPUT_PDF_DIR}'.")
