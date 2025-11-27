@@ -1,6 +1,20 @@
-langchain
-langchain-community
-ollama
-chromadb             # Keeping it for potential future uses or if you change your mind
-pypdf
-Pillow               # For basic image handling if we ever display/save directly (optional for prompts)
+# Core LangChain
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-core>=0.1.0
+
+# LLM
+ollama>=0.1.0
+
+# Document Processing
+pypdf>=3.0.0
+Pillow>=10.0.0
+
+# Vector Store (optional for future use)
+chromadb>=0.4.0
+
+# Data Validation
+pydantic>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
