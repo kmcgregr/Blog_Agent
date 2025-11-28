@@ -1,129 +1,130 @@
-# writers/output_writer.py
+# processors/dream_processor.py
 from pathlib import Path
-from processors.dream_processor import ProcessedDream
+from typing import Optional
+from dataclasses import dataclass
+from chains.processing_chains import ProcessingChains
+from loaders.document_loader import DocumentLoader
 import logging
 
 logger = logging.getLogger(__name__)
 
-class OutputWriter:
-    """Handles writing processed dream data to files"""
+@dataclass
+class ProcessedDream:
+    """Container for all processed dream data"""
+    original_file: str
+    original_text: str
+    corrected_dream_text: str
+    seo_title: str
+    short_story_draft: str
+    final_short_story: str
+    reviewed_story: str
+    image_prompt: Optional[str] = None
+
+class DreamProcessor:
+    """Handles the complete dream processing pipeline"""
     
-    def __init__(self, output_dir: Path):
+    def __init__(self, processing_chains: ProcessingChains):
         """
-        Initialize the output writer.
+        Initialize the dream processor.
         
         Args:
-            output_dir: Directory to write output files
+            processing_chains: ProcessingChains instance
         """
-        self.output_dir = output_dir
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.chains = processing_chains
+        self.document_loader = DocumentLoader()
     
-    def write_processed_dream(self, processed_dream: ProcessedDream) -> None:
+    def process_file(self, file_path: Path) -> Optional[ProcessedDream]:
         """
-        Write all processed dream data to separate files.
+        Process a single dream file through the entire pipeline.
         
         Args:
-            processed_dream: ProcessedDream object containing all data
+            file_path: Path to the dream file
+            
+        Returns:
+            ProcessedDream object or None if processing fails
         """
-        base_filename = Path(processed_dream.original_file).stem
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Processing: {file_path.name}")
+        logger.info(f"{'='*60}")
         
-        # Write corrected dream with title
-        self._write_corrected_dream(
-            base_filename,
-            processed_dream.seo_title,
-            processed_dream.corrected_dream_text
+        # Load document
+        dream_text = self.document_loader.load_document(file_path)
+        if dream_text is None:
+            logger.error(f"Failed to load document: {file_path}")
+            return None
+        
+        # Step 1: Correct grammar and formatting
+        corrected_dream = self.chains.correct_dream(dream_text)
+        if corrected_dream is None:
+            logger.error("Failed to correct dream text")
+            return None
+        
+        # Step 2: Generate SEO title
+        seo_title = self.chains.generate_title(corrected_dream)
+        if seo_title is None:
+            logger.error("Failed to generate title")
+            return None
+        
+        # Step 3: Generate story draft
+        story_draft = self.chains.generate_story(corrected_dream)
+        if story_draft is None:
+            logger.error("Failed to generate story")
+            return None
+        
+        # Step 4: Copy-edit the story
+        final_story = self.chains.copy_edit_story(story_draft)
+        if final_story is None:
+            logger.error("Failed to copy-edit story")
+            return None
+        
+        # Step 5: Review the story
+        reviewed_story = self.chains.review_story(final_story)
+        if reviewed_story is None:
+            logger.error("Failed to review story")
+            return None
+        
+        # Step 6: Generate image prompt (optional)
+        image_prompt = self.chains.generate_image_prompt(corrected_dream, story_draft)
+        
+        # Create ProcessedDream object
+        processed_dream = ProcessedDream(
+            original_file=str(file_path),
+            original_text=dream_text,
+            corrected_dream_text=corrected_dream,
+            seo_title=seo_title,
+            short_story_draft=story_draft,
+            final_short_story=final_story,
+            reviewed_story=reviewed_story,
+            image_prompt=image_prompt
         )
         
-        # Write story draft
-        self._write_story_draft(
-            base_filename,
-            processed_dream.seo_title,
-            processed_dream.short_story_draft
-        )
-        
-        # Write final story
-        self._write_final_story(
-            base_filename,
-            processed_dream.seo_title,
-            processed_dream.final_short_story
-        )
-        
-        # Write reviewed story
-        self._write_reviewed_story(
-            base_filename,
-            processed_dream.seo_title,
-            processed_dream.reviewed_story
-        )
-        
-        # Write image prompt if available
-        if processed_dream.image_prompt:
-            self._write_image_prompt(
-                base_filename,
-                processed_dream.image_prompt
-            )
+        logger.info("✓ Processing complete!")
+        return processed_dream
     
-    def _write_corrected_dream(self, base_filename: str, title: str, content: str) -> None:
-        """Write corrected dream text"""
-        output_path = self.output_dir / f"{base_filename}_corrected_dream.md"
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"# {title}\n\n")
-                f.write(content)
-            logger.info(f"✓ Saved corrected dream: {output_path.name}")
-        except Exception as e:
-            logger.error(f"Error writing corrected dream: {e}")
-    
-    def _write_story_draft(self, base_filename: str, title: str, content: str) -> None:
-        """Write initial story draft"""
-        output_path = self.output_dir / f"{base_filename}_story_draft.md"
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"## Initial Story Draft for: {title}\n\n")
-                f.write(content)
-            logger.info(f"✓ Saved story draft: {output_path.name}")
-        except Exception as e:
-            logger.error(f"Error writing story draft: {e}")
-    
-    def _write_final_story(self, base_filename: str, title: str, content: str) -> None:
-        """Write final copy-edited story"""
-        output_path = self.output_dir / f"{base_filename}_final_short_story.md"
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"## Final (Copy-Edited) Story for: {title}\n\n")
-                f.write(content)
-            logger.info(f"✓ Saved final story: {output_path.name}")
-        except Exception as e:
-            logger.error(f"Error writing final story: {e}")
-    
-    def _write_reviewed_story(self, base_filename: str, title: str, content: str) -> None:
-        """Write reviewed story"""
-        output_path = self.output_dir / f"{base_filename}_reviewed_story.md"
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"## Reviewed Story for: {title}\n\n")
-                f.write(content)
-            logger.info(f"✓ Saved reviewed story: {output_path.name}")
-        except Exception as e:
-            logger.error(f"Error writing reviewed story: {e}")
-    
-    def _write_image_prompt(self, base_filename: str, content: str) -> None:
-        """Write image generation prompt"""
-        output_path = self.output_dir / f"{base_filename}_image_prompt.txt"
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            logger.info(f"✓ Saved image prompt: {output_path.name}")
-        except Exception as e:
-            logger.error(f"Error writing image prompt: {e}")
-    
-    def write_batch(self, processed_dreams: list[ProcessedDream]) -> None:
+    def process_directory(self, input_dir: Path) -> list[ProcessedDream]:
         """
-        Write multiple processed dreams.
+        Process all dream files in a directory.
         
         Args:
-            processed_dreams: List of ProcessedDream objects
+            input_dir: Directory containing dream files
+            
+        Returns:
+            List of ProcessedDream objects
         """
-        logger.info(f"\nWriting {len(processed_dreams)} processed dream(s)...")
-        for processed_dream in processed_dreams:
-            self.write_processed_dream(processed_dream)
-            logger.info("-" * 60)
+        processed_dreams = []
+        
+        # Get all PDF and TXT files
+        files = list(input_dir.glob("*.pdf")) + list(input_dir.glob("*.txt"))
+        
+        if not files:
+            logger.warning(f"No PDF or TXT files found in {input_dir}")
+            return processed_dreams
+        
+        logger.info(f"Found {len(files)} file(s) to process")
+        
+        for file_path in files:
+            processed_dream = self.process_file(file_path)
+            if processed_dream:
+                processed_dreams.append(processed_dream)
+        
+        return processed_dreams
